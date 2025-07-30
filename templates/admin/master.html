@@ -1,0 +1,8 @@
+{# templates/admin/master.html #}
+{% extends 'admin/base.html' %}
+
+{# --- CSS propio SOLO para el panel admin --- #}
+{% block head_css %}
+    {{ super() }}
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+{% endblock %}

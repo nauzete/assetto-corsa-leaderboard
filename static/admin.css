@@ -1,0 +1,17 @@
+/* static/admin.css */
+
+/* Fondo muy claro y texto oscuro para todo el admin */
+body, .navbar, .sidebar, .content, th, td {
+    background: #ffffff !important;
+    color: #000 !important;
+}
+
+/* Links y botones */
+a, .btn-link { color: #0066ff !important; }
+.btn { color: #fff !important; }
+
+/* Tablas y formularios */
+.table > thead > tr > th {
+    background:#f0f0f0;
+    font-weight:600;
+}

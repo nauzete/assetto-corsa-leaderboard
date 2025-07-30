@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assetto Corsa Leaderboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css" />
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+  <section class="section">
+    <div class="container">
+      <h1 class="title">🏎 Leaderboard Assetto Corsa</h1>
+
+      <div class="field has-addons">
+        <div class="control is-expanded">
+          <input id="urlInput" class="input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false"
+                 value="http://es2.acorsahostinges.de:12000/live-timing?server=0" 
+                 placeholder="URL del servidor Assetto Corsa" />
+        </div>
+        <div class="control">
+          <button id="loadBtn" class="button is-info">Cargar Leaderboard</button>
+        </div>
+      </div>
+
+      <div class="buttons" style="margin-bottom: 12px;">
+        <button id="btnGeneral" class="button is-primary is-active-mode">Vista General</button>
+        <button id="btnCategoria" class="button is-light">Por Categoría</button>
+      </div>
+
+      <div class="notification is-info is-light" style="margin-bottom: 1rem;">
+        <p><strong>Instrucciones:</strong></p>
+        <ul>
+          <li>📊 <strong>Vista General:</strong> Clasificación única con todos los pilotos ordenados por mejor tiempo</li>
+          <li>📋 <strong>Por Categoría:</strong> Pilotos agrupados por tipo de coche (GT, Hypercar, Rally, etc.)</li>
+          <li>⚙️ <strong>Panel Admin:</strong> <a href="/admin" target="_blank">Gestionar categorías y coches</a> (admin/admin)</li>
+          <li>🔄 <strong>Auto-actualización:</strong> Los datos se actualizan automáticamente cada 30 segundos</li>
+        </ul>
+      </div>
+
+      <p id="statusMsg"></p>
+      <div id="leaderboardOutput"></div>
+
+      <footer style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333;">
+        <p style="text-align: center; font-size: 0.9rem;">
+          🏁 Proyecto 2º Bachillerato - Leaderboard Assetto Corsa en tiempo real
+        </p>
+      </footer>
+    </div>
+  </section>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

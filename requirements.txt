@@ -1,0 +1,38 @@
+# ====================================================================
+# Dependencias para Assetto Corsa Leaderboard
+# Instalación: pip install -r requirements.txt
+# ====================================================================
+
+# Flask - Framework web principal
+flask==2.3.3
+
+# Flask Extensions - Extensiones principales
+flask-sqlalchemy==3.0.5      # Base de datos ORM
+flask-admin==1.6.1            # Panel de administración
+flask-socketio==5.3.6         # WebSockets para tiempo real
+flask-cors==4.0.0             # Manejo de CORS
+flask-login==0.6.3            # Sistema de autenticación
+
+# HTTP y Networking
+requests==2.31.0              # Cliente HTTP para API de Assetto Corsa
+urllib3==2.0.7                # Utilidades HTTP (SSL bypass)
+
+# Server y Concurrencia
+eventlet==0.33.3              # Servidor async para SocketIO
+werkzeug==2.3.7               # WSGI toolkit para Flask
+
+# ====================================================================
+# Instalación:
+# 
+# Linux/macOS:
+#   pip3 install -r requirements.txt
+#
+# Windows:
+#   pip install -r requirements.txt
+#
+# Con entorno virtual (recomendado):
+#   python -m venv venv
+#   source venv/bin/activate  # Linux/macOS
+#   venv\Scripts\activate     # Windows
+#   pip install -r requirements.txt
+# ====================================================================

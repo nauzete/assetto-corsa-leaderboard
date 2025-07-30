@@ -1,0 +1,407 @@
+/* style.css - Assetto Corsa Leaderboard (TODO EL TEXTO EN NEGRO) */
+
+/* ========== FORZAR TEXTO NEGRO EN TODO ========== */
+* {
+  color: #000000 !important;
+}
+
+/* ========== CONFIGURACIÓN GLOBAL ========== */
+body {
+  background: linear-gradient(135deg, #4a4a4a 0%, #00bfff 100%);
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #000000 !important;
+  margin: 0;
+  padding: 0;
+}
+
+/* ========== TÍTULOS Y TEXTO ========== */
+h1, h2, h3, h4, h5, h6 {
+  color: #000000 !important;
+  font-weight: bold;
+  margin: 0;
+}
+
+p, div, span, label, li, a, a:visited, a:hover {
+  color: #000000 !important;
+}
+
+.title, .subtitle {
+  color: #000000 !important;
+}
+
+/* ========== BOTÓN ACTIVO ========== */
+.is-active-mode {
+  font-weight: bold !important;
+  box-shadow: 0 0 10px rgba(0, 191, 255, 0.5);
+}
+
+/* ========== INPUTS Y BOTONES ========== */
+input.input {
+  background-color: #ffffff;
+  border: 2px solid #00bfff;
+  color: #000000 !important;
+  font-size: 1rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-family: inherit;
+}
+
+input.input:focus {
+  border-color: #0088cc;
+  box-shadow: 0 0 0 3px rgba(0, 191, 255, 0.4);
+  outline: none;
+}
+
+input.input::placeholder {
+  color: #666666 !important;
+}
+
+button.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background: #00bfff;
+  color: #000000 !important;
+}
+
+button.button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+  background: #0088cc;
+}
+
+button.button.is-light {
+  background: #f5f5f5;
+  color: #000000 !important;
+}
+
+button.button.is-primary {
+  background: #00bfff;
+  color: #000000 !important;
+}
+
+/* ========== MENSAJES DE ESTADO ========== */
+#statusMsg {
+  margin-top: 10px;
+  font-weight: 600;
+  font-size: 1.1rem;
+  text-align: center;
+  padding: 8px;
+  border-radius: 6px;
+  background-color: #ffffff;
+  border: 1px solid #cccccc;
+  color: #000000 !important;
+}
+
+/* ========== NOTIFICACIONES ========== */
+.notification.is-info.is-light {
+  background-color: rgba(0, 191, 255, 0.1);
+  border: 2px solid #00bfff;
+  border-radius: 8px;
+  padding: 16px;
+  color: #000000 !important;
+}
+
+.notification ul {
+  margin-left: 16px;
+}
+
+.notification li {
+  margin-bottom: 8px;
+  color: #000000 !important;
+}
+
+.notification strong {
+  color: #000000 !important;
+}
+
+/* ========== TABLAS ========== */
+table {
+  background-color: #ffffff;
+  border-collapse: collapse;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 32px;
+}
+
+th, td {
+  border: 1px solid #cccccc;
+  padding: 12px 16px;
+  color: #000000 !important;
+  text-align: left;
+}
+
+th {
+  background-color: #f0f0f0;
+  color: #000000 !important;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+tbody tr:hover {
+  background-color: rgba(0, 191, 255, 0.1);
+  transition: background-color 0.15s ease;
+}
+
+/* ========== ESTILOS DEL PODIO ========== */
+.podium-1st {
+  background-color: #ffd700 !important; /* Oro */
+  font-weight: bold !important;
+  color: #000000 !important;
+  box-shadow: inset 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
+.podium-2nd {
+  background-color: #c0c0c0 !important; /* Plata */
+  font-weight: bold !important; 
+  color: #000000 !important;
+  box-shadow: inset 0 0 10px rgba(192, 192, 192, 0.3);
+}
+
+.podium-3rd {
+  background-color: #cd7f32 !important; /* Bronce */
+  font-weight: bold !important;
+  color: #000000 !important;
+  box-shadow: inset 0 0 10px rgba(205, 127, 50, 0.3);
+}
+
+/* ========== SUBTÍTULOS DE CATEGORÍAS ========== */
+.subtitle {
+  color: #000000 !important;
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-top: 32px;
+  margin-bottom: 16px;
+  padding: 8px 16px;
+  background-color: #ffffff;
+  border-left: 4px solid #00bfff;
+  border-radius: 6px;
+}
+
+/* ========== CONTENEDOR PRINCIPAL ========== */
+.container {
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 32px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+  margin: 20px auto;
+  max-width: 1024px;
+}
+
+/* ========== CAMPO DE ENTRADA ========== */
+.field.has-addons {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.control.is-expanded {
+  flex: 1;
+}
+
+.control {
+  display: flex;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+/* ========== FOOTER ========== */
+footer {
+  border-top: 2px solid rgba(0, 191, 255, 0.3);
+  background-color: #ffffff;
+  border-radius: 6px;
+  margin-top: 32px;
+  padding: 16px;
+}
+
+footer p {
+  color: #000000 !important;
+  font-weight: 600;
+  margin: 0;
+  text-align: center;
+}
+
+/* ========== CORRECCIÓN PANEL ADMIN ========== */
+.flask-admin body,
+.admin-page {
+  background: #ffffff !important;
+}
+
+.flask-admin .navbar,
+.flask-admin .navbar-nav,
+.flask-admin .breadcrumb {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+.flask-admin table {
+  background-color: #ffffff !important;
+}
+
+.flask-admin th,
+.flask-admin td,
+.flask-admin .form-control,
+.flask-admin .btn,
+.flask-admin a,
+.flask-admin p,
+.flask-admin div,
+.flask-admin span,
+.flask-admin label {
+  color: #000000 !important;
+}
+
+.flask-admin .btn-primary {
+  background-color: #00bfff !important;
+  border-color: #00bfff !important;
+  color: #000000 !important;
+}
+
+.flask-admin .nav-link:hover {
+  background-color: rgba(0, 191, 255, 0.1) !important;
+  color: #000000 !important;
+}
+
+.flask-admin .form-control {
+  background-color: #ffffff !important;
+  border-color: #cccccc !important;
+  color: #000000 !important;
+}
+
+/* ========== RESPONSIVE DESIGN ========== */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+    max-width: 768px;
+  }
+
+  .title {
+    font-size: 1.5rem;
+  }
+
+  .buttons {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .buttons .button {
+    margin: 4px 0;
+  }
+
+  table {
+    font-size: 0.9rem;
+  }
+
+  th, td {
+    padding: 8px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 12px;
+    margin-left: 8px;
+    margin-right: 8px;
+  }
+
+  .title {
+    font-size: 1.2rem;
+  }
+
+  .subtitle {
+    font-size: 1.1rem;
+    margin-top: 24px;
+    margin-bottom: 12px;
+    padding: 6px 12px;
+  }
+
+  table {
+    font-size: 0.8rem;
+    margin-bottom: 24px;
+  }
+
+  th, td {
+    padding: 6px 8px;
+  }
+
+  input.input {
+    font-size: 0.9rem;
+    padding: 6px 10px;
+  }
+
+  button.button {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+  }
+
+  .notification {
+    padding: 12px;
+    font-size: 0.9rem;
+  }
+
+  #statusMsg {
+    font-size: 1rem;
+    padding: 6px;
+  }
+}
+
+/* ========== ANIMACIONES ========== */
+@keyframes fadeIn {
+  from { 
+    opacity: 0; 
+    transform: translateY(20px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+table {
+  animation: fadeIn 0.25s ease;
+}
+
+.notification {
+  animation: fadeIn 0.15s ease;
+}
+
+/* ========== SCROLLBAR PERSONALIZADA ========== */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00bfff;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #0088cc;
+}
+
+/* ========== ASEGURAR QUE BULMA NO SOBRESCRIBA ========== */
+.title {
+  color: #000000 !important;
+}
+
+.section {
+  padding: 20px;
+}
