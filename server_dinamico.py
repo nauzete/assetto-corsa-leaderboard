@@ -1,21 +1,9 @@
-"""
-server_dinamico.py
-
-Backend Flask completo para Leaderboard de Assetto Corsa con:
-• Descarga del leaderboard desde la URL que introduzcas
-• Clasificación general y por categorías (panel /admin)
-• Panel de administración protegido con login (admin / admin)
-• Actualización en tiempo real vía Socket.IO
-• Seed sin duplicados y base de datos SQLite
-• Solución SSL: verificación desactivada para servidores con certificados inválidos
-"""
-
 import os
 import requests
-import urllib3
 from urllib.parse import urlparse, urlunparse
+import urllib3
 
-from flask import Flask, jsonify, request, redirect, render_template
+from flask import Flask, jsonify, request, render_template, redirect
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
@@ -27,10 +15,8 @@ from flask_login import (
 from flask_socketio import SocketIO
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# 🔧 SOLUCIÓN SSL: Desactivar advertencias de SSL inseguro
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ─────────────────── Configuración ───────────────────
 APP_PORT   = 5000
 AC_TIMEOUT = 10
 DB_URI     = "sqlite:///leaderboard.db"
@@ -50,7 +36,7 @@ socketio   = SocketIO(app, cors_allowed_origins="*")
 login_mgr  = LoginManager(app)
 login_mgr.login_view = "login_route"
 
-# ──────────────────── Modelos ─────────────────────────
+# ---- Modelos ----
 car_category = db.Table(
     "car_category",
     db.Column("category_id", db.Integer,
@@ -92,7 +78,7 @@ class User(db.Model, UserMixin):
 @login_mgr.user_loader
 def load_user(uid): return User.query.get(int(uid))
 
-# ──────────────────── Helpers ─────────────────────────
+
 def format_lap(ns):
     if isinstance(ns, (int, float)) and ns > 0:
         ms = int(ns) // 1_000_000
@@ -101,7 +87,6 @@ def format_lap(ns):
     return "--"
 
 def transform_url(u: str) -> str:
-    """Convierte /live-timing → /api/live-timings/leaderboard.json"""
     if not u:
         return ""
     if "/api/live-timings/leaderboard.json" in u:
@@ -112,72 +97,96 @@ def transform_url(u: str) -> str:
         path = path[:-13]
     new_path = f"{path}/api/live-timings/leaderboard.json"
     return urlunparse(
-        (p.scheme, p.netloc, new_path, p.params, p.query, p.fragment)
-    )
-
-def best_by_pilot(drivers):
-    res = {}
-    for d in drivers:
-        name = d.get("CarInfo", {}).get("DriverName", "Desconocido")
-        for info in (d.get("Cars") or {}).values():
-            lap = info.get("BestLap", 0)
-            if 0 < lap < res.get(name, 1e18):
-                res[name] = lap
-    return res
+        ("http", p.netloc, new_path, p.params, p.query, p.fragment)
+    ) if p.scheme in ["http", "https"] else u  # fuerza HTTP si es https
 
 def car_category_of(model_code: str) -> str:
-    """Usa categoría asignada o, si no hay, el nombre completo del coche."""
     car = Car.query.filter_by(model_code=model_code).first()
     if car and car.categories.count():
         return car.categories.first().name
-    return model_code  # fallback: nombre completo
+    return model_code  # fallback: nombre completo del coche
 
-# ───────────────────── API ────────────────────────────
+# ======= BUGFIX: Mejor tiempo por coche/categoría y general correcto =======
+
 @app.route("/api/leaderboard", methods=["POST"])
 def api_leader():
     api_url = transform_url(request.json.get("url", ""))
     try:
-        # 🔧 SOLUCIÓN SSL: Desactivar verificación SSL con verify=False
-        print(f"🔗 Conectando a: {api_url}")
+        print(f"🔗 Conectando a {api_url}")
         r = requests.get(api_url, timeout=AC_TIMEOUT, verify=False)
         r.raise_for_status()
-        print(f"✅ Conexión exitosa - Status: {r.status_code}")
     except Exception as e:
-        print(f"❌ Error de conexión: {e}")
+        print(f"❌ ERROR {e}")
         return jsonify({"error": f"Conexión fallida: {e}"}), 502
 
-    data     = r.json() or {}
-    drivers  = (data.get("ConnectedDrivers") or []) + \
-               (data.get("DisconnectedDrivers") or [])
-    bests    = best_by_pilot(drivers)
+    data = r.json() or {}
+    drivers = (data.get("ConnectedDrivers") or []) + (data.get("DisconnectedDrivers") or [])
 
-    grouped  = {}
-    for d in drivers:
-        name = d.get("CarInfo", {}).get("DriverName", "Desconocido")
-        for model in (d.get("Cars") or {}):
-            cat = car_category_of(model)
-            grouped.setdefault(cat, {})[name] = format_lap(bests.get(name, 0))
+    best_general = {}  # name → mejor lap_ns > 0
+    categorias_data = {}  # categoria → { piloto: mejor lap formateado en ese coche/categoría }
 
-    # salida: vista general + por categorías
-    general = [{"name": n, "bestlap": l}
-               for n, l in sorted(
-                   {n: format_lap(t) for n, t in bests.items()}.items(),
-                   key=lambda x: (x[1] == "--", x[1])
-               )]
-    categorias = {c: [{"name": n, "bestlap": l}
-                      for n, l in sorted(p.items(),
-                                         key=lambda x: (x[1] == "--", x[1]))]
-                  for c, p in grouped.items()}
+    for driver in drivers:
+        name = driver.get("CarInfo", {}).get("DriverName", "Desconocido")
+        cars = driver.get("Cars", {})
+        for model_code, car_info in cars.items():
+            lap_ns = car_info.get("BestLap", 0)
+            lap_formatted = format_lap(lap_ns)
+            # General: SOLO laps válidos (>0)
+            if lap_ns > 0:
+                if name not in best_general or lap_ns < best_general[name]:
+                    best_general[name] = lap_ns
+            # Categoría: asignar mejor lap sólo de ese coche/categoría
+            categoria = car_category_of(model_code)
+            if categoria not in categorias_data:
+                categorias_data[categoria] = {}
+            prev_lap_str = categorias_data[categoria].get(name)
+            # Comparar laps previos con el nuevo (solo válidos)
+            if lap_ns > 0:
+                if prev_lap_str and prev_lap_str != "--":
+                    # Convertir tiempo previo a ns
+                    parts = prev_lap_str.split(":")
+                    if len(parts) == 2 and "." in parts[1]:
+                        mm = int(parts[0])
+                        ss, ms = map(int, parts[1].split("."))
+                        prev_ns = (mm * 60 + ss) * 1000 + ms
+                        prev_ns *= 1_000_000
+                        if lap_ns < prev_ns:
+                            categorias_data[categoria][name] = lap_formatted
+                    else:
+                        categorias_data[categoria][name] = lap_formatted
+                else:
+                    categorias_data[categoria][name] = lap_formatted
+            elif not prev_lap_str:
+                categorias_data[categoria][name] = "--"
 
-    print(f"📊 Procesados {len(general)} pilotos en {len(categorias)} categorías")
-    return jsonify({"general": general, "categorias": categorias})
+    general = [
+        {"name": n, "bestlap": format_lap(t)}
+        for n, t in sorted(
+            best_general.items(),
+            key=lambda x: (format_lap(x[1]) == "--", format_lap(x[1]))
+        )
+    ]
 
-# ─────────────── Frontend ─────────────────
+    categorias_formatted = {}
+    for categoria, pilotos in categorias_data.items():
+        categorias_formatted[categoria] = [
+            {"name": name, "bestlap": tiempo}
+            for name, tiempo in sorted(
+                pilotos.items(), key=lambda x: (x[1] == "--", x[1])
+            )
+        ]
+
+    # Devuelve ambos para toggle general/categorías en frontend
+    return jsonify({"general": general, "categorias": categorias_formatted})
+
+# ---- Frontend ----
+from flask import render_template
 @app.route("/")
-def index(): 
+def index():
+    # Asegúrate que existe templates/index.html
     return render_template("index.html")
 
-# ──────────────── Admin y login ──────────────────────
+# ---- Admin/Panel/Login ----
 class SecureView(ModelView):
     def is_accessible(self):
         return current_user.is_authenticated and current_user.role == "admin"
@@ -193,40 +202,14 @@ def login_route():
         if u and u.verify(request.form["p"]):
             login_user(u)
             return redirect(request.args.get("next") or "/admin")
-        return """
-        <div style="max-width:400px;margin:auto;padding-top:3rem;background:#fff;padding:2rem;border-radius:8px;">
-            <h3 style="color:#ff3860;">❌ Login fallido</h3>
-            <p style="color:#000;">Usuario o contraseña incorrectos.</p>
-            <a href='/login' style="color:#3273dc;">← Volver a intentar</a>
-        </div>"""
-    
-    return """
-    <div style="max-width:400px;margin:auto;padding-top:3rem;background:#fff;padding:2rem;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
-        <h2 style="color:#000;text-align:center;margin-bottom:1.5rem;">🏎️ Admin Panel</h2>
-        <form method="post">
-            <div style="margin-bottom:1rem;">
-                <label style="color:#000;display:block;margin-bottom:0.5rem;font-weight:bold;">Usuario:</label>
-                <input name="u" type="text" style="width:100%;padding:0.75rem;border:2px solid #dbdbdb;border-radius:4px;font-size:1rem;" autocomplete="username" required>
-            </div>
-            <div style="margin-bottom:1.5rem;">
-                <label style="color:#000;display:block;margin-bottom:0.5rem;font-weight:bold;">Contraseña:</label>
-                <input name="p" type="password" style="width:100%;padding:0.75rem;border:2px solid #dbdbdb;border-radius:4px;font-size:1rem;" autocomplete="current-password" required>
-            </div>
-            <button type="submit" style="width:100%;padding:0.75rem;background:#3273dc;color:#fff;border:none;border-radius:4px;font-size:1rem;cursor:pointer;font-weight:bold;">
-                🔐 Iniciar Sesión
-            </button>
-        </form>
-        <div style="text-align:center;margin-top:1.5rem;padding-top:1rem;border-top:1px solid #dbdbdb;">
-            <small style="color:#666;">Usuario por defecto: <strong>admin</strong> / <strong>admin</strong></small><br>
-            <a href="/" style="color:#3273dc;text-decoration:none;">← Volver al Leaderboard</a>
-        </div>
-    </div>
-    <style>
-        body { background: linear-gradient(135deg, #4a4a4a 0%, #00bfff 100%); min-height: 100vh; margin: 0; font-family: sans-serif; }
-        button:hover { background: #2366d1 !important; }
-        input:focus { border-color: #3273dc; outline: none; }
-    </style>
-    """
+        return "<h3>Login fallido</h3><a href='/login'>Volver</a>"
+    return '''
+    <form method="post" style="max-width:320px;margin:auto;padding-top:3rem">
+        <h2>Iniciar sesión</h2><br>
+        <label>Usuario:<input name="u" class="input"></label><br>
+        <label>Contraseña:<input name="p" type="password" class="input"></label><br><br>
+        <button class="button is-info">Entrar</button>
+    </form>'''
 
 @app.route("/logout")
 def logout():
@@ -235,54 +218,28 @@ def logout():
 @login_mgr.unauthorized_handler
 def unauthorized(): return redirect("/login")
 
-# ───── Socket.IO: refresco en tiempo real ────────────
 @db.event.listens_for(db.session, "after_commit")
-def emit_changes(_): 
-    socketio.emit("cat_update")
-    print("🔄 Emitido evento cat_update via Socket.IO")
+def emit_changes(_): socketio.emit("cat_update")
 
-# ────────────── Datos iniciales (seed) ───────────────
 def seed():
-    print("🌱 Inicializando datos...")
     if not User.query.first():
-        admin_user = User(username="admin", pw_hash=generate_password_hash("admin"))
-        db.session.add(admin_user)
-        print("👤 Usuario admin creado")
-    
-    default_cats = [
-        ("GT/Track-Day", "#3273dc"),
-        ("Hypercar",     "#ff3860"),
-        ("Rally",        "#23d160"),
-        ("Concept",      "#ffdd57"),
-        ("Formula",      "#9b59b6"),
-        ("Drift",        "#e67e22")
-    ]
-    
+        db.session.add(User(username="admin",
+                            pw_hash=generate_password_hash("admin")))
+    default_cats = [("GT/Track-Day", "#3273dc"),
+                    ("Hypercar",      "#ff3860"),
+                    ("Rally",         "#23d160"),
+                    ("Concept",       "#ffdd57")]
     for name, color in default_cats:
         c = Category.query.filter_by(name=name).first()
         if not c:
             db.session.add(Category(name=name, color=color))
-            print(f"📂 Categoría '{name}' creada")
         elif c.color != color:
             c.color = color
-            print(f"🎨 Color de '{name}' actualizado")
-    
     db.session.commit()
-    print("✅ Datos inicializados correctamente")
 
-# ─────────────────── Ejecución ───────────────────────
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
-        seed()
+        db.create_all(); seed()
+    print(f"🚀  http://localhost:{APP_PORT}   (admin/admin)")
+    socketio.run(app, port=APP_PORT)
     
-    print("=" * 60)
-    print("🚀 ASSETTO CORSA LEADERBOARD - SERVIDOR ACTIVO")
-    print("=" * 60)
-    print(f"🌐 Frontend:    http://localhost:{APP_PORT}/")
-    print(f"⚙️  Panel Admin: http://localhost:{APP_PORT}/admin")
-    print(f"👤 Login:       admin / admin")
-    print("🔧 SSL:         Verificación desactivada (verify=False)")
-    print("=" * 60)
-    
-    socketio.run(app, port=APP_PORT, debug=False)
