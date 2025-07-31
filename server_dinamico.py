@@ -61,7 +61,7 @@ class Car(db.Model):
     __tablename__ = "cars"
     id         = db.Column(db.Integer, primary_key=True)
     model_code = db.Column(db.String(120), unique=True, nullable=False)
-    label      = db.Column(db.String(120))
+    label      = db.Column(db.String(120))  # <- CarName aquí
     categories = db.relationship(
         "Category", secondary=car_category,
         back_populates="cars", lazy="dynamic"
@@ -77,7 +77,6 @@ class User(db.Model, UserMixin):
 
 @login_mgr.user_loader
 def load_user(uid): return User.query.get(int(uid))
-
 
 def format_lap(ns):
     if isinstance(ns, (int, float)) and ns > 0:
@@ -97,16 +96,18 @@ def transform_url(u: str) -> str:
         path = path[:-13]
     new_path = f"{path}/api/live-timings/leaderboard.json"
     return urlunparse(
-        ("http", p.netloc, new_path, p.params, p.query, p.fragment)
-    ) if p.scheme in ["http", "https"] else u  # fuerza HTTP si es https
+        (p.scheme, p.netloc, new_path, p.params, p.query, p.fragment)
+    )
 
-def car_category_of(model_code: str) -> str:
-    car = Car.query.filter_by(model_code=model_code).first()
+def car_category_of(car_name: str) -> str:
+    """
+    Usa el label (=CarName) para buscar categoría en la base de datos.
+    Si no hay match, la categoría es el propio CarName.
+    """
+    car = Car.query.filter_by(label=car_name).first()
     if car and car.categories.count():
         return car.categories.first().name
-    return model_code  # fallback: nombre completo del coche
-
-# ======= BUGFIX: Mejor tiempo por coche/categoría y general correcto =======
+    return car_name
 
 @app.route("/api/leaderboard", methods=["POST"])
 def api_leader():
@@ -131,19 +132,20 @@ def api_leader():
         for model_code, car_info in cars.items():
             lap_ns = car_info.get("BestLap", 0)
             lap_formatted = format_lap(lap_ns)
+            # ============= NUEVO: usar CarName para categorías =================
+            car_name = car_info.get("CarName", model_code)
+            categoria = car_category_of(car_name)
             # General: SOLO laps válidos (>0)
             if lap_ns > 0:
                 if name not in best_general or lap_ns < best_general[name]:
                     best_general[name] = lap_ns
-            # Categoría: asignar mejor lap sólo de ese coche/categoría
-            categoria = car_category_of(model_code)
+            # Categoría: asignar mejor lap solo de ese coche/nombre
             if categoria not in categorias_data:
                 categorias_data[categoria] = {}
             prev_lap_str = categorias_data[categoria].get(name)
-            # Comparar laps previos con el nuevo (solo válidos)
             if lap_ns > 0:
                 if prev_lap_str and prev_lap_str != "--":
-                    # Convertir tiempo previo a ns
+                    # Convertir tiempo previo a ns para comparar, como antes
                     parts = prev_lap_str.split(":")
                     if len(parts) == 2 and "." in parts[1]:
                         mm = int(parts[0])
@@ -176,17 +178,13 @@ def api_leader():
             )
         ]
 
-    # Devuelve ambos para toggle general/categorías en frontend
     return jsonify({"general": general, "categorias": categorias_formatted})
 
-# ---- Frontend ----
 from flask import render_template
 @app.route("/")
 def index():
-    # Asegúrate que existe templates/index.html
     return render_template("index.html")
 
-# ---- Admin/Panel/Login ----
 class SecureView(ModelView):
     def is_accessible(self):
         return current_user.is_authenticated and current_user.role == "admin"
@@ -213,10 +211,12 @@ def login_route():
 
 @app.route("/logout")
 def logout():
-    logout_user(); return redirect("/")
+    logout_user()
+    return redirect("/")
 
 @login_mgr.unauthorized_handler
-def unauthorized(): return redirect("/login")
+def unauthorized():
+    return redirect("/login")
 
 @db.event.listens_for(db.session, "after_commit")
 def emit_changes(_): socketio.emit("cat_update")
@@ -239,7 +239,8 @@ def seed():
 
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all(); seed()
+        db.create_all()
+        seed()
     print(f"🚀  http://localhost:{APP_PORT}   (admin/admin)")
     socketio.run(app, port=APP_PORT)
     
