@@ -1,26 +1,9 @@
-"""
-server_dinamico.py - CORRECCIÓN DEL BUG DE MÚLTIPLES COCHES
-
-Backend Flask completo para Leaderboard de Assetto Corsa con:
-• Descarga del leaderboard desde la URL que introduzcas
-• Clasificación general y por categorías (panel /admin)
-• Panel de administración protegido con login (admin / admin)
-• Actualización en tiempo real vía Socket.IO
-• Seed sin duplicados y base de datos SQLite
-• ✅ BUG CORREGIDO: Tiempos específicos por coche, no globales
-
-CORRECCIÓN PRINCIPAL:
-- Cada coche muestra su tiempo específico en su categoría
-- Si un piloto usa múltiples coches en la misma categoría, se muestra el mejor de esa categoría
-- El tiempo global del piloto NO se aplica a todas las categorías
-"""
-
 import os
 import requests
-import urllib3
 from urllib.parse import urlparse, urlunparse
+import urllib3
 
-from flask import Flask, jsonify, request, redirect, render_template
+from flask import Flask, jsonify, request, render_template, redirect
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
@@ -32,10 +15,8 @@ from flask_login import (
 from flask_socketio import SocketIO
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# 🔧 SOLUCIÓN SSL: Desactivar advertencias de SSL inseguro
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ─────────────────── Configuración ───────────────────
 APP_PORT   = 5000
 AC_TIMEOUT = 10
 DB_URI     = "sqlite:///leaderboard.db"
@@ -55,7 +36,7 @@ socketio   = SocketIO(app, cors_allowed_origins="*")
 login_mgr  = LoginManager(app)
 login_mgr.login_view = "login_route"
 
-# ──────────────────── Modelos ─────────────────────────
+# ---- Modelos ----
 car_category = db.Table(
     "car_category",
     db.Column("category_id", db.Integer,
@@ -97,7 +78,7 @@ class User(db.Model, UserMixin):
 @login_mgr.user_loader
 def load_user(uid): return User.query.get(int(uid))
 
-# ──────────────────── Helpers ─────────────────────────
+
 def format_lap(ns):
     if isinstance(ns, (int, float)) and ns > 0:
         ms = int(ns) // 1_000_000
@@ -106,7 +87,6 @@ def format_lap(ns):
     return "--"
 
 def transform_url(u: str) -> str:
-    """Convierte /live-timing → /api/live-timings/leaderboard.json"""
     if not u:
         return ""
     if "/api/live-timings/leaderboard.json" in u:
@@ -117,123 +97,96 @@ def transform_url(u: str) -> str:
         path = path[:-13]
     new_path = f"{path}/api/live-timings/leaderboard.json"
     return urlunparse(
-        (p.scheme, p.netloc, new_path, p.params, p.query, p.fragment)
-    )
+        ("http", p.netloc, new_path, p.params, p.query, p.fragment)
+    ) if p.scheme in ["http", "https"] else u  # fuerza HTTP si es https
 
 def car_category_of(model_code: str) -> str:
-    """Usa categoría asignada o, si no hay, el nombre completo del coche."""
     car = Car.query.filter_by(model_code=model_code).first()
     if car and car.categories.count():
         return car.categories.first().name
-    return model_code  # fallback: nombre completo
+    return model_code  # fallback: nombre completo del coche
 
-def parse_lap_to_ns(lap_str):
-    """Convierte string de tiempo a nanosegundos para comparar"""
-    if lap_str == "--":
-        return float('inf')
-    try:
-        parts = lap_str.split(":")
-        minutes = int(parts[0])
-        sec_ms = parts[1].split(".")
-        seconds = int(sec_ms[0])
-        milliseconds = int(sec_ms[1])
-        return (minutes * 60000 + seconds * 1000 + milliseconds) * 1_000_000
-    except:
-        return float('inf')
+# ======= BUGFIX: Mejor tiempo por coche/categoría y general correcto =======
 
-# ✅ FUNCIÓN CORREGIDA: Procesa cada coche individualmente
-def process_drivers_corrected(drivers):
-    """
-    CORRECCIÓN DEL BUG: Procesa cada coche de cada piloto individualmente
-    para mostrar tiempos específicos por vehículo en cada categoría.
-    """
-    # Para vista general: mejor tiempo absoluto de cada piloto
-    best_general = {}
-    
-    # Para vista por categorías: mejor tiempo por piloto EN CADA CATEGORÍA
-    categorias_data = {}
-    
-    for driver in drivers:
-        name = driver.get("CarInfo", {}).get("DriverName", "Desconocido")
-        cars = driver.get("Cars", {})
-        
-        for model_code, car_info in cars.items():
-            lap_ns = car_info.get("BestLap", 0)
-            lap_formatted = format_lap(lap_ns)
-            
-            # 1. Para vista general: guardar el mejor tiempo absoluto
-            if name not in best_general or (lap_ns > 0 and lap_ns < best_general[name]):
-                best_general[name] = lap_ns
-            
-            # 2. ✅ CORRECCIÓN: Para categorías, usar tiempo específico del coche
-            categoria = car_category_of(model_code)
-            
-            # Inicializar categoría si no existe
-            if categoria not in categorias_data:
-                categorias_data[categoria] = {}
-            
-            # ✅ CLAVE: Comparar tiempos dentro de la MISMA CATEGORÍA
-            if name in categorias_data[categoria]:
-                # Si el piloto ya tiene tiempo en esta categoría, mantener el mejor
-                tiempo_actual_ns = parse_lap_to_ns(categorias_data[categoria][name])
-                if lap_ns > 0 and lap_ns < tiempo_actual_ns:
-                    categorias_data[categoria][name] = lap_formatted
-                    print(f"🔄 {name} mejoró en {categoria}: {lap_formatted}")
-            else:
-                # Primera vez del piloto en esta categoría
-                categorias_data[categoria][name] = lap_formatted
-                print(f"➕ {name} agregado a {categoria}: {lap_formatted}")
-    
-    return best_general, categorias_data
-
-# ───────────────────── API ────────────────────────────
 @app.route("/api/leaderboard", methods=["POST"])
 def api_leader():
     api_url = transform_url(request.json.get("url", ""))
     try:
-        # 🔧 SOLUCIÓN SSL: Desactivar verificación SSL con verify=False
-        print(f"🔗 Conectando a: {api_url}")
+        print(f"🔗 Conectando a {api_url}")
         r = requests.get(api_url, timeout=AC_TIMEOUT, verify=False)
         r.raise_for_status()
-        print(f"✅ Conexión exitosa - Status: {r.status_code}")
     except Exception as e:
-        print(f"❌ Error de conexión: {e}")
+        print(f"❌ ERROR {e}")
         return jsonify({"error": f"Conexión fallida: {e}"}), 502
 
     data = r.json() or {}
-    drivers = (data.get("ConnectedDrivers") or []) + \
-              (data.get("DisconnectedDrivers") or [])
-    
-    print(f"📊 Procesando {len(drivers)} pilotos...")
-    
-    # ✅ USAR FUNCIÓN CORREGIDA
-    best_general, categorias_data = process_drivers_corrected(drivers)
-    
-    # Formatear vista general
-    general = [{"name": n, "bestlap": format_lap(t)}
-               for n, t in sorted(best_general.items(),
-                                  key=lambda x: (x[1] if x[1] > 0 else float('inf')))]
-    
-    # Formatear vista por categorías (ya procesada correctamente)
+    drivers = (data.get("ConnectedDrivers") or []) + (data.get("DisconnectedDrivers") or [])
+
+    best_general = {}  # name → mejor lap_ns > 0
+    categorias_data = {}  # categoria → { piloto: mejor lap formateado en ese coche/categoría }
+
+    for driver in drivers:
+        name = driver.get("CarInfo", {}).get("DriverName", "Desconocido")
+        cars = driver.get("Cars", {})
+        for model_code, car_info in cars.items():
+            lap_ns = car_info.get("BestLap", 0)
+            lap_formatted = format_lap(lap_ns)
+            # General: SOLO laps válidos (>0)
+            if lap_ns > 0:
+                if name not in best_general or lap_ns < best_general[name]:
+                    best_general[name] = lap_ns
+            # Categoría: asignar mejor lap sólo de ese coche/categoría
+            categoria = car_category_of(model_code)
+            if categoria not in categorias_data:
+                categorias_data[categoria] = {}
+            prev_lap_str = categorias_data[categoria].get(name)
+            # Comparar laps previos con el nuevo (solo válidos)
+            if lap_ns > 0:
+                if prev_lap_str and prev_lap_str != "--":
+                    # Convertir tiempo previo a ns
+                    parts = prev_lap_str.split(":")
+                    if len(parts) == 2 and "." in parts[1]:
+                        mm = int(parts[0])
+                        ss, ms = map(int, parts[1].split("."))
+                        prev_ns = (mm * 60 + ss) * 1000 + ms
+                        prev_ns *= 1_000_000
+                        if lap_ns < prev_ns:
+                            categorias_data[categoria][name] = lap_formatted
+                    else:
+                        categorias_data[categoria][name] = lap_formatted
+                else:
+                    categorias_data[categoria][name] = lap_formatted
+            elif not prev_lap_str:
+                categorias_data[categoria][name] = "--"
+
+    general = [
+        {"name": n, "bestlap": format_lap(t)}
+        for n, t in sorted(
+            best_general.items(),
+            key=lambda x: (format_lap(x[1]) == "--", format_lap(x[1]))
+        )
+    ]
+
     categorias_formatted = {}
     for categoria, pilotos in categorias_data.items():
         categorias_formatted[categoria] = [
             {"name": name, "bestlap": tiempo}
-            for name, tiempo in sorted(pilotos.items(),
-                                     key=lambda x: (x[1] == "--", x[1]))
+            for name, tiempo in sorted(
+                pilotos.items(), key=lambda x: (x[1] == "--", x[1])
+            )
         ]
-    
-    print(f"📊 Procesados {len(general)} pilotos en {len(categorias_formatted)} categorías")
-    print(f"🔄 Emitido evento cat_update via Socket.IO")
 
+    # Devuelve ambos para toggle general/categorías en frontend
     return jsonify({"general": general, "categorias": categorias_formatted})
 
-# ─────────────── Frontend ─────────────────
+# ---- Frontend ----
+from flask import render_template
 @app.route("/")
-def index(): 
+def index():
+    # Asegúrate que existe templates/index.html
     return render_template("index.html")
 
-# ──────────────── Admin y login ──────────────────────
+# ---- Admin/Panel/Login ----
 class SecureView(ModelView):
     def is_accessible(self):
         return current_user.is_authenticated and current_user.role == "admin"
@@ -265,50 +218,28 @@ def logout():
 @login_mgr.unauthorized_handler
 def unauthorized(): return redirect("/login")
 
-# ───── Socket.IO: refresco en tiempo real ────────────
 @db.event.listens_for(db.session, "after_commit")
 def emit_changes(_): socketio.emit("cat_update")
 
-# ────────────── Datos iniciales (seed) ───────────────
 def seed():
-    print("🌱 Inicializando datos...")
     if not User.query.first():
         db.session.add(User(username="admin",
                             pw_hash=generate_password_hash("admin")))
-        print("👤 Usuario admin creado")
-    
     default_cats = [("GT/Track-Day", "#3273dc"),
                     ("Hypercar",      "#ff3860"),
                     ("Rally",         "#23d160"),
-                    ("Concept",       "#ffdd57"),
-                    ("Formula",       "#9b59b6"),
-                    ("Drift",         "#e67e22")]
-    
+                    ("Concept",       "#ffdd57")]
     for name, color in default_cats:
         c = Category.query.filter_by(name=name).first()
         if not c:
             db.session.add(Category(name=name, color=color))
-            print(f"📂 Categoría '{name}' creada")
         elif c.color != color:
             c.color = color
-    
     db.session.commit()
-    print("✅ Datos inicializados correctamente")
 
-# ─────────────────── Ejecución ───────────────────────
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
-        seed()
-    
-    print("=" * 60)
-    print("🚀 ASSETTO CORSA LEADERBOARD - SERVIDOR ACTIVO")
-    print("=" * 60)
-    print(f"🌐 Frontend:    http://localhost:{APP_PORT}/")
-    print(f"⚙️  Panel Admin: http://localhost:{APP_PORT}/admin")
-    print(f"👤 Login:       admin / admin")
-    print(f"🔧 SSL:         Verificación desactivada (verify=False)")
-    print(f"✅ BUG CORREGIDO: Tiempos específicos por coche")
-    print("=" * 60)
-    
+        db.create_all(); seed()
+    print(f"🚀  http://localhost:{APP_PORT}   (admin/admin)")
     socketio.run(app, port=APP_PORT)
+    
