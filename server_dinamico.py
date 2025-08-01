@@ -100,10 +100,6 @@ def transform_url(u: str) -> str:
     )
 
 def car_category_of(car_name: str) -> str:
-    """
-    Usa el label (=CarName) para buscar categoría en la base de datos.
-    Si no hay match, la categoría es el propio CarName.
-    """
     car = Car.query.filter_by(label=car_name).first()
     if car and car.categories.count():
         return car.categories.first().name
@@ -123,8 +119,8 @@ def api_leader():
     data = r.json() or {}
     drivers = (data.get("ConnectedDrivers") or []) + (data.get("DisconnectedDrivers") or [])
 
-    best_general = {}  # name → mejor lap_ns > 0
-    categorias_data = {}  # categoria → { piloto: mejor lap formateado en ese coche/categoría }
+    best_general = {}
+    categorias_data = {}
 
     for driver in drivers:
         name = driver.get("CarInfo", {}).get("DriverName", "Desconocido")
@@ -132,20 +128,16 @@ def api_leader():
         for model_code, car_info in cars.items():
             lap_ns = car_info.get("BestLap", 0)
             lap_formatted = format_lap(lap_ns)
-            # ============= NUEVO: usar CarName para categorías =================
             car_name = car_info.get("CarName", model_code)
             categoria = car_category_of(car_name)
-            # General: SOLO laps válidos (>0)
             if lap_ns > 0:
                 if name not in best_general or lap_ns < best_general[name]:
                     best_general[name] = lap_ns
-            # Categoría: asignar mejor lap solo de ese coche/nombre
             if categoria not in categorias_data:
                 categorias_data[categoria] = {}
             prev_lap_str = categorias_data[categoria].get(name)
             if lap_ns > 0:
                 if prev_lap_str and prev_lap_str != "--":
-                    # Convertir tiempo previo a ns para comparar, como antes
                     parts = prev_lap_str.split(":")
                     if len(parts) == 2 and "." in parts[1]:
                         mm = int(parts[0])
@@ -161,22 +153,30 @@ def api_leader():
             elif not prev_lap_str:
                 categorias_data[categoria][name] = "--"
 
+    # --------- ORDEN exacto de ranking: menor tiempo antes, "--" al final ---------
+    def lap_sort_key(x):
+        lap = x["bestlap"]
+        if lap == "--":
+            return float("inf")
+        try:
+            min_seg = int(lap.split(":")[0])
+            ss, ms = map(int, lap.split(":")[1].split("."))
+            return min_seg * 60_000 + ss * 1_000 + ms
+        except Exception:
+            return float("inf")
+
+    # General
     general = [
         {"name": n, "bestlap": format_lap(t)}
-        for n, t in sorted(
-            best_general.items(),
-            key=lambda x: (format_lap(x[1]) == "--", format_lap(x[1]))
-        )
+        for n, t in best_general.items()
     ]
+    general = sorted(general, key=lap_sort_key)
 
+    # Categorías
     categorias_formatted = {}
     for categoria, pilotos in categorias_data.items():
-        categorias_formatted[categoria] = [
-            {"name": name, "bestlap": tiempo}
-            for name, tiempo in sorted(
-                pilotos.items(), key=lambda x: (x[1] == "--", x[1])
-            )
-        ]
+        plist = [{"name": name, "bestlap": tiempo} for name, tiempo in pilotos.items()]
+        categorias_formatted[categoria] = sorted(plist, key=lap_sort_key)
 
     return jsonify({"general": general, "categorias": categorias_formatted})
 
@@ -243,4 +243,3 @@ if __name__ == "__main__":
         seed()
     print(f"🚀  http://localhost:{APP_PORT}   (admin/admin)")
     socketio.run(app, port=APP_PORT)
-    
